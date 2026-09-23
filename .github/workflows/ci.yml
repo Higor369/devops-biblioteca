@@ -1,0 +1,106 @@
+# ---------------------------------------------------------------------------
+# CI: testa a solution e, se tudo passar, publica a imagem no Docker Hub.
+#
+#   testes  -> roda em todo push e pull request para a main
+#   imagem  -> so roda depois dos testes, e so na main
+#
+# Os testes de integracao usam Testcontainers para subir um PostgreSQL real.
+# Nao e preciso configurar nada para isso: o runner ubuntu-latest ja vem com
+# Docker instalado e rodando.
+#
+# Acompanhe as execucoes na aba "Actions" do repositorio no GitHub.
+# ---------------------------------------------------------------------------
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Adiciona o botao "Run workflow" na aba Actions, para rodar manualmente.
+  workflow_dispatch:
+
+env:
+  IMAGEM: biblioteca-api
+
+jobs:
+  testes:
+    name: Build e testes
+    runs-on: ubuntu-latest
+
+    steps:
+      # O runner comeca vazio: primeiro e preciso baixar o codigo do repositorio.
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      - name: Instalar o .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      # Cada etapa separada aparece como um passo proprio no log: se algo falhar,
+      # fica claro se foi o restore, a compilacao ou um teste.
+      - name: Restaurar pacotes
+        run: dotnet restore
+
+      # TreatWarningsAsErrors (Directory.Build.props) vale aqui tambem: um aviso
+      # de compilacao ja reprova o pipeline.
+      - name: Compilar
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Rodar os testes
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+      # Um passo so roda se todos os anteriores passaram. Se algum teste falhar,
+      # o job para no passo anterior e esta mensagem nunca aparece.
+      - name: Resultado
+        run: echo "Todos os testes passaram!"
+
+  imagem:
+    name: Build e push da imagem
+    # Sem "needs" os dois jobs rodariam em paralelo: a imagem seria publicada
+    # mesmo com teste quebrado.
+    needs: testes
+    # Em pull request so os testes rodam: nenhuma imagem e publicada antes de o
+    # codigo chegar na main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Os secrets DOCKERHUB_USERNAME e DOCKERHUB_TOKEN estao cadastrados neste
+    # environment: sem esta linha o job nao enxerga nenhum dos dois.
+    environment: DEVELOPMENT
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      # O token entra no lugar da senha: pode ser revogado sem trocar a senha da conta.
+      - name: Login no Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Buildx e o builder moderno do Docker. E ele que permite guardar o cache
+      # das camadas entre execucoes (cache-from / cache-to abaixo).
+      - name: Preparar o Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # A tag sequencial e o run_number: contador do proprio GitHub, que sobe a
+      # cada execucao deste workflow (inclusive as de pull request, por isso a
+      # sequencia de tags pode pular numeros). "latest" sempre aponta para a
+      # imagem mais recente.
+      - name: Build e push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGEM }}:${{ github.run_number }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGEM }}:latest
+          # Cada execucao comeca numa maquina limpa. Sem cache, o dotnet restore
+          # do Dockerfile baixaria todos os pacotes de novo a cada push.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Resultado
+        run: echo "Imagem publicada com a tag ${{ github.run_number }}"
