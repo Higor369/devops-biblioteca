@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+tests/
+docs/
+.git/
+.vs/
+.vscode/
+.idea/
+*.user
+# Senhas de ambiente nao entram no contexto de build.
+.env*

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- Necessario apenas em tempo de design (geracao de migrations).
+         PrivateAssets impede que ele vaze para quem referencia esta camada. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Biblioteca.Domain\Biblioteca.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

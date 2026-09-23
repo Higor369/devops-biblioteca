@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# Ambiente de PRODUCAO (simulado localmente).
+#
+# So entra quando pedido explicitamente com -f:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Nenhuma senha fica neste arquivo: os valores vem do .env.prod, que nao e
+# versionado. A sintaxe ${VAR:?mensagem} faz o Compose se recusar a subir se a
+# variavel faltar - melhor falhar agora do que subir um banco com senha vazia.
+# ---------------------------------------------------------------------------
+
+# Nome do projeto: prefixa containers, rede e volume (biblioteca-prod-api-1,
+# biblioteca-prod_dados-postgres), isolando prod de dev.
+name: biblioteca-prod
+
+services:
+
+  banco:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB no .env.prod}
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER no .env.prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env.prod}
+    # Sem "ports": o banco nao fica acessivel pela maquina, so pela rede interna
+    # do Compose, onde a API o encontra pelo nome do servico ("banco").
+    restart: unless-stopped
+
+  api:
+    environment:
+      # Desliga o Scalar e o appsettings.Development.json nao e carregado.
+      # Production ja e o padrao do ASP.NET quando a variavel nao existe;
+      # declarar deixa a intencao explicita.
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Biblioteca: "Host=banco;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    ports:
+      # Porta diferente da de dev para os dois ambientes poderem rodar lado a lado.
+      - "8081:8080"
+    restart: unless-stopped

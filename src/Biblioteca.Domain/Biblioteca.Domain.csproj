@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- O nucleo da arquitetura: nenhuma referencia a projeto ou pacote externo.
+       Se um dia esta secao ganhar um PackageReference, a arquitetura regrediu. -->
+
+  <ItemGroup>
+    <!-- Abre apenas os metodos Reconstituir dos objetos de valor para a camada de
+         persistencia, que precisa remontar entidades vindas do banco sem revalidar.
+         E uma costura deliberada e estreita: nenhuma outra camada enxerga isso. -->
+    <InternalsVisibleTo Include="Biblioteca.Infrastructure" />
+  </ItemGroup>
+
+</Project>

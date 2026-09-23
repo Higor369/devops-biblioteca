@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# Base: o que e igual em qualquer ambiente.
+#
+# Este arquivo nao sobe sozinho: faltam senhas, portas e ASPNETCORE_ENVIRONMENT.
+# Isso vem de um segundo arquivo, que o Compose mescla por cima deste:
+#
+#   dev:  docker compose up -d --build
+#         (carrega o docker-compose.override.yml automaticamente)
+#
+#   prod: docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Para ver o resultado final da mesclagem, troque "up -d --build" por "config".
+# ---------------------------------------------------------------------------
+services:
+
+  banco:
+    image: postgres:17-alpine
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    healthcheck:
+      # A API so sobe depois que este teste passar: sem isso a aplicacao tentaria
+      # aplicar as migrations antes de o banco aceitar conexao.
+      # O $$ impede o Compose de substituir a variavel: quem le e o shell dentro
+      # do container, entao o teste usa o usuario do ambiente que estiver rodando.
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      banco:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  dados-postgres:

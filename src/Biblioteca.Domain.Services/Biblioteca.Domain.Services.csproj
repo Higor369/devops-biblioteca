@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Unica dependencia externa: a abstracao de DI, para a camada registrar a si mesma.
+         Nao traz container nem runtime junto. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Biblioteca.Domain\Biblioteca.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

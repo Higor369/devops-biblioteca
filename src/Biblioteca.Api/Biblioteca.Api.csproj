@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Biblioteca.Application\Biblioteca.Application.csproj" />
+    <ProjectReference Include="..\Biblioteca.Infrastructure\Biblioteca.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <!-- Permite que o projeto de teste de integracao enxergue a classe Program. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Biblioteca.Api.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

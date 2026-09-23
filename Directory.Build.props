@@ -1,0 +1,16 @@
+<Project>
+
+  <!-- Propriedades comuns a todos os projetos da solution.
+       Centralizar aqui evita divergencia de configuracao entre camadas. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Warning vira erro: impede que a base de codigo acumule avisos ignorados. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>

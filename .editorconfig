@@ -1,0 +1,55 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,csx}]
+indent_size = 4
+
+[*.{csproj,props,targets,json,yml,yaml,slnx}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# Ordem e organizacao de usings
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:warning
+
+# Preferencias que sustentam o estilo adotado na solucao
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = true:warning
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+dotnet_style_readonly_field = true:warning
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+
+# Nomenclatura: interface comeca com I
+dotnet_naming_rule.interfaces_comecam_com_i.severity = warning
+dotnet_naming_rule.interfaces_comecam_com_i.symbols = interface
+dotnet_naming_rule.interfaces_comecam_com_i.style = prefixo_i
+dotnet_naming_symbols.interface.applicable_kinds = interface
+dotnet_naming_style.prefixo_i.required_prefix = I
+dotnet_naming_style.prefixo_i.capitalization = pascal_case
+
+# Campo privado comeca com _
+dotnet_naming_rule.campos_privados_com_underline.severity = warning
+dotnet_naming_rule.campos_privados_com_underline.symbols = campo_privado
+dotnet_naming_rule.campos_privados_com_underline.style = prefixo_underline
+dotnet_naming_symbols.campo_privado.applicable_kinds = field
+dotnet_naming_symbols.campo_privado.applicable_accessibilities = private
+dotnet_naming_style.prefixo_underline.required_prefix = _
+dotnet_naming_style.prefixo_underline.capitalization = camel_case
+
+# Migrations sao geradas pelo EF Core: nao faz sentido cobrar estilo delas,
+# e reformata-las a mao seria desfeito na proxima geracao.
+[**/Migrations/**.cs]
+generated_code = true

@@ -1,0 +1,1112 @@
+{
+  "info": {
+    "name": "Biblioteca API",
+    "description": "Todos os endpoints da API de acervo: autores, gêneros e livros, mais o healthcheck.\n\n**Endereço:** selecione o ambiente *Biblioteca - Dev* (porta 8080) ou *Biblioteca - Prod* (porta 8081). Sem ambiente, vale a variável `baseUrl` da coleção (`http://localhost:8080`).\n\n**Ids:** os pedidos *Criar* guardam o id devolvido em `autorId`, `generoId` e `livroId`, e os demais pedidos usam essas variáveis. Os pedidos *Listar* também guardam o primeiro id da lista, então com o acervo de exemplo dá para ir direto de *Listar* para *Obter por id*.\n\n**Runner:** as pastas estão na ordem certa para rodar a coleção inteira de uma vez (Run collection). Ela cria um autor, um gênero e um livro, testa os cenários de erro e, no fim, apaga o que criou. Pode ser rodada várias vezes seguidas.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "autorId",
+      "value": ""
+    },
+    {
+      "key": "generoId",
+      "value": ""
+    },
+    {
+      "key": "generoNome",
+      "value": ""
+    },
+    {
+      "key": "livroId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Saúde",
+      "description": "Verifica se a API está de pé e se o banco responde.",
+      "item": [
+        {
+          "name": "Healthcheck",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Banco respondendo\", () => pm.expect(pm.response.text()).to.eql(\"Healthy\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Responde `Healthy` quando a API e o PostgreSQL estão disponíveis. É o mesmo endpoint usado pelo healthcheck do Docker Compose."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Autores",
+      "description": "CRUD de autores. Nome entre 2 e 200 caracteres; homônimos são permitidos.",
+      "item": [
+        {
+          "name": "Listar autores",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "// Com o acervo de exemplo, já deixa um id pronto para os pedidos \"por id\".",
+                  "const itens = pm.response.json();",
+                  "pm.test(\"Resposta é uma lista\", () => pm.expect(itens).to.be.an(\"array\"));",
+                  "if (itens.length > 0) {",
+                  "    pm.collectionVariables.set(\"autorId\", itens[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Criar autor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const criado = pm.response.json();",
+                  "pm.collectionVariables.set(\"autorId\", criado.id);",
+                  "pm.test(\"Location aponta para o recurso criado\", () => {",
+                  "    pm.expect(pm.response.headers.get(\"Location\")).to.include(criado.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Cecília Meireles\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Guarda o id criado em `autorId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Obter autor por id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Devolve o registro pedido\", () => {",
+                  "    pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"autorId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores/{{autorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores",
+                "{{autorId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar autor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"atualizadoEm preenchido\", () => pm.expect(pm.response.json().atualizadoEm).to.not.be.null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores/{{autorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores",
+                "{{autorId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Cecília Benevides de Carvalho Meireles\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Gêneros",
+      "description": "CRUD de gêneros. Nome entre 2 e 100 caracteres e único, sem diferenciar maiúsculas de minúsculas.",
+      "item": [
+        {
+          "name": "Listar gêneros",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "// Com o acervo de exemplo, já deixa um id pronto para os pedidos \"por id\".",
+                  "const itens = pm.response.json();",
+                  "pm.test(\"Resposta é uma lista\", () => pm.expect(itens).to.be.an(\"array\"));",
+                  "if (itens.length > 0) {",
+                  "    pm.collectionVariables.set(\"generoId\", itens[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/generos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Criar gênero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const criado = pm.response.json();",
+                  "pm.collectionVariables.set(\"generoId\", criado.id);",
+                  "pm.test(\"Location aponta para o recurso criado\", () => {",
+                  "    pm.expect(pm.response.headers.get(\"Location\")).to.include(criado.id);",
+                  "});",
+                  "pm.collectionVariables.set(\"generoNome\", criado.nome);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/generos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Poesia {{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "O nome leva `{{$timestamp}}` porque gênero é único: assim o pedido pode ser repetido sem cair no 409. Guarda o id em `generoId` e o nome em `generoNome`."
+          },
+          "response": []
+        },
+        {
+          "name": "Obter gênero por id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Devolve o registro pedido\", () => {",
+                  "    pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"generoId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/generos/{{generoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generos",
+                "{{generoId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar gênero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"atualizadoEm preenchido\", () => pm.expect(pm.response.json().atualizadoEm).to.not.be.null);",
+                  "pm.collectionVariables.set(\"generoNome\", pm.response.json().nome);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/generos/{{generoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generos",
+                "{{generoId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Poesia brasileira {{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Livros",
+      "description": "CRUD de livros. Todo livro referencia um autor e um gênero existentes; ano entre 1450 e o ano corrente. Livros repetidos são permitidos.",
+      "item": [
+        {
+          "name": "Listar livros",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "// Com o acervo de exemplo, já deixa um id pronto para os pedidos \"por id\".",
+                  "const itens = pm.response.json();",
+                  "pm.test(\"Resposta é uma lista\", () => pm.expect(itens).to.be.an(\"array\"));",
+                  "if (itens.length > 0) {",
+                  "    pm.collectionVariables.set(\"livroId\", itens[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros"
+              ]
+            },
+            "description": "Cada livro já vem com autor e gênero expandidos."
+          },
+          "response": []
+        },
+        {
+          "name": "Criar livro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const criado = pm.response.json();",
+                  "pm.collectionVariables.set(\"livroId\", criado.id);",
+                  "pm.test(\"Location aponta para o recurso criado\", () => {",
+                  "    pm.expect(pm.response.headers.get(\"Location\")).to.include(criado.id);",
+                  "});",
+                  "pm.test(\"Vinculado ao autor e ao gênero informados\", () => {",
+                  "    pm.expect(criado.autor.id).to.eql(pm.collectionVariables.get(\"autorId\"));",
+                  "    pm.expect(criado.genero.id).to.eql(pm.collectionVariables.get(\"generoId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Romanceiro da Inconfidência\",\n  \"anoDePublicacao\": 1953,\n  \"autorId\": \"{{autorId}}\",\n  \"generoId\": \"{{generoId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Usa `autorId` e `generoId`. Guarda o id criado em `livroId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Obter livro por id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Devolve o registro pedido\", () => {",
+                  "    pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"livroId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros/{{livroId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros",
+                "{{livroId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar livro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"atualizadoEm preenchido\", () => pm.expect(pm.response.json().atualizadoEm).to.not.be.null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros/{{livroId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros",
+                "{{livroId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Ou Isto ou Aquilo\",\n  \"anoDePublicacao\": 1964,\n  \"autorId\": \"{{autorId}}\",\n  \"generoId\": \"{{generoId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cenários de erro",
+      "description": "Respostas de erro no formato RFC 9457 (`application/problem+json`), sempre com o campo `codigo`.",
+      "item": [
+        {
+          "name": "Autor sem nome (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"codigo = requisicao.invalida\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"requisicao.invalida\");",
+                  "});",
+                  "pm.test(\"Aponta o campo que falhou\", () => pm.expect(pm.response.json().errors).to.have.property(\"Nome\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Barrado pelas DataAnnotations do DTO, antes de chegar ao caso de uso."
+          },
+          "response": []
+        },
+        {
+          "name": "Autor com nome curto demais (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"codigo = autor.nome_tamanho_invalido\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"autor.nome_tamanho_invalido\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \" a \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "`\" a \"` tem 3 caracteres e passa na anotação, mas vira `\"a\"` depois de normalizado. Quem recusa é o objeto de valor do domínio."
+          },
+          "response": []
+        },
+        {
+          "name": "Autor inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"codigo = autor.nao_encontrado\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"autor.nao_encontrado\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores/{{$guid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores",
+                "{{$guid}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Gênero com nome já cadastrado (409)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Mesmo nome do gênero criado, em maiúsculas: a unicidade ignora a caixa.",
+                  "pm.variables.set(\"generoNomeMaiusculo\", (pm.collectionVariables.get(\"generoNome\") || \"\").toUpperCase());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"codigo = genero.nome_ja_cadastrado\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"genero.nome_ja_cadastrado\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/generos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"{{generoNomeMaiusculo}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Reenvia o nome guardado em `generoNome` em maiúsculas. Rode *Criar gênero* antes."
+          },
+          "response": []
+        },
+        {
+          "name": "Livro com autor inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"codigo = autor.nao_encontrado\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"autor.nao_encontrado\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Livro Órfão\",\n  \"anoDePublicacao\": 1900,\n  \"autorId\": \"{{$guid}}\",\n  \"generoId\": \"{{generoId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Livro com ano no futuro (400)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"anoFuturo\", new Date().getFullYear() + 1);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"codigo = livro.ano_publicacao_invalido\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"livro.ano_publicacao_invalido\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Obra Futura\",\n  \"anoDePublicacao\": {{anoFuturo}},\n  \"autorId\": \"{{autorId}}\",\n  \"generoId\": \"{{generoId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "O ano passa na anotação (limite 9999), mas o domínio compara com o ano corrente."
+          },
+          "response": []
+        },
+        {
+          "name": "Livro com ano anterior a 1450 (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"codigo = requisicao.invalida\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"requisicao.invalida\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Manuscrito Medieval\",\n  \"anoDePublicacao\": 1400,\n  \"autorId\": \"{{autorId}}\",\n  \"generoId\": \"{{generoId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Exclusões",
+      "description": "Fica por último para o Runner: apaga o que as pastas anteriores criaram. Autor e gênero só podem ser excluídos sem livros vinculados.",
+      "item": [
+        {
+          "name": "Excluir autor com livro vinculado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"codigo = autor.possui_livros_vinculados\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"autor.possui_livros_vinculados\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores/{{autorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores",
+                "{{autorId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Excluir gênero com livro vinculado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"codigo = genero.possui_livros_vinculados\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"genero.possui_livros_vinculados\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/generos/{{generoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generos",
+                "{{generoId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Excluir livro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros/{{livroId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros",
+                "{{livroId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Obter livro excluído (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"codigo = livro.nao_encontrado\", () => {",
+                  "    pm.expect(pm.response.json().codigo).to.eql(\"livro.nao_encontrado\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/livros/{{livroId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "livros",
+                "{{livroId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Excluir autor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/autores/{{autorId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "autores",
+                "{{autorId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Excluir gênero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/generos/{{generoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generos",
+                "{{generoId}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

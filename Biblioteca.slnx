@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Biblioteca.Api/Biblioteca.Api.csproj" />
+    <Project Path="src/Biblioteca.Application/Biblioteca.Application.csproj" />
+    <Project Path="src/Biblioteca.Domain.Services/Biblioteca.Domain.Services.csproj" />
+    <Project Path="src/Biblioteca.Domain/Biblioteca.Domain.csproj" />
+    <Project Path="src/Biblioteca.Infrastructure/Biblioteca.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Biblioteca.Api.IntegrationTests/Biblioteca.Api.IntegrationTests.csproj" />
+    <Project Path="tests/Biblioteca.Application.Tests/Biblioteca.Application.Tests.csproj" />
+    <Project Path="tests/Biblioteca.Domain.Tests/Biblioteca.Domain.Tests.csproj" />
+  </Folder>
+</Solution>
