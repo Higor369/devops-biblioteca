@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# CI: compila a solution e roda todos os testes a cada push e pull request.
+#
+# Os testes de integracao usam Testcontainers para subir um PostgreSQL real.
+# Nao e preciso configurar nada para isso: o runner ubuntu-latest ja vem com
+# Docker instalado e rodando.
+#
+# Acompanhe as execucoes na aba "Actions" do repositorio no GitHub.
+# ---------------------------------------------------------------------------
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Adiciona o botao "Run workflow" na aba Actions, para rodar manualmente.
+  workflow_dispatch:
+
+jobs:
+  testes:
+    name: Build e testes
+    runs-on: ubuntu-latest
+
+    steps:
+      # O runner comeca vazio: primeiro e preciso baixar o codigo do repositorio.
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      - name: Instalar o .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      # Cada etapa separada aparece como um passo proprio no log: se algo falhar,
+      # fica claro se foi o restore, a compilacao ou um teste.
+      - name: Restaurar pacotes
+        run: dotnet restore
+
+      # TreatWarningsAsErrors (Directory.Build.props) vale aqui tambem: um aviso
+      # de compilacao ja reprova o pipeline.
+      - name: Compilar
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Rodar os testes
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+      # Um passo so roda se todos os anteriores passaram. Se algum teste falhar,
+      # o job para no passo anterior e esta mensagem nunca aparece.
+      - name: Resultado
+        run: echo "Todos os testes passaram!"
