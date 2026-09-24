@@ -1,0 +1,156 @@
+# ---------------------------------------------------------------------------
+# Seguranca: scans de vulnerabilidade do codigo, das dependencias e da imagem.
+#
+# Este arquivo e um "reusable workflow": o ci.yml o chama como um job
+# (uses: ./.github/workflows/seguranca.yml), em paralelo aos testes.
+#
+#   repositorio -> pacotes NuGet vulneraveis, secrets no codigo e erros de
+#                  configuracao no Dockerfile (Trivy)
+#   imagem      -> vulnerabilidades do Alpine e das bibliotecas .NET dentro da
+#                  imagem final (Trivy)
+#   codeql      -> falhas de seguranca no proprio codigo C# (CodeQL)
+#
+# Nenhum scan reprova o pipeline nem impede a publicacao da imagem. O que for
+# encontrado vira alerta em dois lugares:
+#   - aba Security > Code scanning do repositorio (fica la ate ser corrigido)
+#   - aviso amarelo no resumo da execucao, na aba Actions
+#
+# O Trivy so reporta vulnerabilidade CRITICAL ou HIGH que ja tenha correcao
+# disponivel: sem correcao nao ha o que fazer alem de esperar.
+# ---------------------------------------------------------------------------
+name: Seguranca
+
+on:
+  # Chamado pelo ci.yml a cada push e pull request.
+  workflow_call:
+  # Toda segunda as 06:00 UTC. Vulnerabilidades novas sao descobertas o tempo
+  # todo: uma imagem limpa hoje pode ter CVE na semana que vem sem que nenhuma
+  # linha de codigo tenha mudado.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Para enviar os resultados para a aba Security > Code scanning.
+  security-events: write
+
+jobs:
+  repositorio:
+    name: Dependencias, secrets e Dockerfile
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      # Action de terceiros: fixada pelo SHA do commit, que nao pode ser movido
+      # para outro codigo como uma tag pode.
+      #   vuln      -> pacotes do Directory.Packages.props (inclusive os de teste)
+      #   secret    -> tokens e chaves commitados por engano
+      #   misconfig -> boas praticas do Dockerfile (usuario root, etc.)
+      #
+      # exit-code 0: o scan nunca reprova o job. O resultado sai em SARIF, o
+      # formato que a aba Security do GitHub entende.
+      - name: Scan do repositorio
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          # Sem isto o SARIF levaria tambem as severidades MEDIUM e LOW.
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-repositorio.sarif
+          exit-code: 0
+
+      - name: Publicar alertas na aba Security
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-repositorio.sarif
+          # Separa estes alertas dos da imagem e do CodeQL na aba Security.
+          category: trivy-repositorio
+
+      - name: Avisar no resumo da execucao
+        run: |
+          total=$(jq '[.runs[].results[]] | length' trivy-repositorio.sarif)
+          if [ "$total" -gt 0 ]; then
+            echo "::warning title=Trivy (repositorio)::$total problema(s) de seguranca encontrado(s). Veja a aba Security > Code scanning."
+          else
+            echo "Nenhum problema encontrado."
+          fi
+
+  imagem:
+    name: Vulnerabilidades da imagem
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      - name: Preparar o Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Builda a mesma imagem que o ci.yml publica, mas so dentro do runner
+      # (load: true, push: false). O cache de camadas e o mesmo do ci.yml.
+      - name: Build da imagem
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: biblioteca-api:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Analisa os pacotes do Alpine e as bibliotecas .NET que foram parar na
+      # imagem final, inclusive o proprio runtime do ASP.NET.
+      - name: Scan da imagem
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: biblioteca-api:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-imagem.sarif
+          exit-code: 0
+
+      - name: Publicar alertas na aba Security
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-imagem.sarif
+          category: trivy-imagem
+
+      - name: Avisar no resumo da execucao
+        run: |
+          total=$(jq '[.runs[].results[]] | length' trivy-imagem.sarif)
+          if [ "$total" -gt 0 ]; then
+            echo "::warning title=Trivy (imagem)::$total vulnerabilidade(s) encontrada(s) na imagem. Veja a aba Security > Code scanning."
+          else
+            echo "Nenhuma vulnerabilidade encontrada."
+          fi
+
+  codeql:
+    name: Analise de codigo (CodeQL)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      # build-mode none: o CodeQL analisa o C# direto do codigo-fonte, sem
+      # precisar compilar a solution.
+      - name: Iniciar o CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          build-mode: none
+
+      # O CodeQL ja funciona assim por padrao: os alertas vao para a aba
+      # Security > Code scanning e, em pull request, aparecem no proprio diff.
+      - name: Analisar
+        uses: github/codeql-action/analyze@v4

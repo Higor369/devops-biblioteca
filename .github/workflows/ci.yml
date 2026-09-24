@@ -1,8 +1,10 @@
 # ---------------------------------------------------------------------------
 # CI: testa a solution e, se tudo passar, publica a imagem no Docker Hub.
 #
-#   testes  -> roda em todo push e pull request para a main
-#   imagem  -> so roda depois dos testes, e so na main
+#   testes     -> roda em todo push e pull request para a main
+#   seguranca  -> scans de vulnerabilidade (seguranca.yml): so geram alerta,
+#                 nao bloqueiam a publicacao da imagem
+#   imagem     -> so roda depois dos testes, e so na main
 #
 # Os testes de integracao usam Testcontainers para subir um PostgreSQL real.
 # Nao e preciso configurar nada para isso: o runner ubuntu-latest ja vem com
@@ -56,10 +58,22 @@ jobs:
       - name: Resultado
         run: echo "Todos os testes passaram!"
 
+  # Os scans ficam em outro arquivo. Aqui ele entra como um job comum, e os jobs
+  # de dentro dele aparecem no log como "Seguranca / <nome do job>".
+  # Nenhum job depende dele: o que os scans encontram vira alerta, nao bloqueio.
+  seguranca:
+    name: Seguranca
+    uses: ./.github/workflows/seguranca.yml
+    # Um workflow chamado so pode ter as permissoes que quem chama concede.
+    # security-events: write e o que deixa os scans publicarem os alertas.
+    permissions:
+      contents: read
+      security-events: write
+
   imagem:
     name: Build e push da imagem
     # Sem "needs" os dois jobs rodariam em paralelo: a imagem seria publicada
-    # mesmo com teste quebrado.
+    # mesmo com teste quebrado. A seguranca fica de fora de proposito.
     needs: testes
     # Em pull request so os testes rodam: nenhuma imagem e publicada antes de o
     # codigo chegar na main.
