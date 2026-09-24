@@ -50,6 +50,14 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
+
+    // Só a interface do Swagger: o documento continua sendo o que o AddOpenApi gera
+    // em /openapi/v1.json. RoutePrefix vazio serve a interface na raiz da porta.
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "Biblioteca API v1");
+        options.RoutePrefix = string.Empty;
+    });
 }
 
 app.MapControllers();

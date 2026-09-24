@@ -27,6 +27,9 @@ appsettings.Local.json
 .env.*
 !.env.prod.example
 
+# Arquivos pessoais que nunca vão para o repositório (chaves, anotações).
+_nao_comitar/
+
 # NuGet
 *.nupkg
 packages/

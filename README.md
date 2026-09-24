@@ -14,7 +14,7 @@ princípios SOLID e cobertura de testes que roda contra infraestrutura real.
 | Persistência | EF Core 10 + PostgreSQL 17 (Npgsql) |
 | Mapeamento | Mapperly (source generator, MIT) |
 | Validação de entrada | DataAnnotations |
-| Documentação | OpenAPI + Scalar |
+| Documentação | OpenAPI + Swagger UI + Scalar |
 | Testes | xUnit, NSubstitute, Shouldly, Testcontainers |
 | Empacotamento | Docker multi-stage + Docker Compose |
 
@@ -38,7 +38,7 @@ O que cada ambiente recebe:
 | | Desenvolvimento | Produção |
 | --- | --- | --- |
 | `ASPNETCORE_ENVIRONMENT` | `Development` | `Production` |
-| Scalar (`/scalar/v1`) | disponível | `404` |
+| Swagger UI (`/`) e Scalar (`/scalar/v1`) | disponíveis | `404` |
 | Log do SQL gerado pelo EF | ligado (`appsettings.Development.json`) | desligado |
 | Acervo de exemplo na criação do banco | gravado (`appsettings.Development.json`) | não |
 | Senha do banco | fixa no override | lida do `.env.prod`; se faltar, o Compose recusa subir |
@@ -66,7 +66,8 @@ definido em `src/Biblioteca.Infrastructure/Persistencia/DadosDeExemplo.cs`. Se o
 tiver qualquer autor ou gênero, nada é gravado. Um volume criado antes dessa mudança já tem
 o schema aplicado e não recebe o acervo; para recomeçar do zero, use `docker compose down -v`.
 
-- Documentação interativa: <http://localhost:8080/scalar/v1>
+- Swagger UI: <http://localhost:8080/>
+- Scalar: <http://localhost:8080/scalar/v1>
 - Healthcheck: <http://localhost:8080/health>
 
 Para derrubar tudo, inclusive os dados:
@@ -82,7 +83,7 @@ cp .env.prod.example .env.prod   # uma vez só; depois troque a senha
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
-A API sobe em `http://localhost:8081`. O healthcheck responde normalmente; o Scalar, não.
+A API sobe em `http://localhost:8081`. O healthcheck responde normalmente; o Swagger UI e o Scalar, não.
 Os mesmos `-f` e `--env-file` valem para qualquer outro comando nesse ambiente, como
 `logs`, `ps` e `down`.
 
