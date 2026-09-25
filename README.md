@@ -20,32 +20,36 @@ princípios SOLID e cobertura de testes que roda contra infraestrutura real.
 
 ## Como executar
 
-### Ambientes: desenvolvimento e produção
+### Ambientes: desenvolvimento, produção e testes locais
 
-A imagem da API é **uma só** para os dois ambientes — o que muda é a configuração
-entregue a ela quando o container sobe. Essa configuração fica dividida em arquivos que o
-Compose mescla, o de cima sobrescrevendo o de baixo:
+A imagem da API é **uma só** para todos os ambientes — o que muda é a configuração
+entregue a ela quando o container sobe. Cada ambiente tem o próprio arquivo do Compose,
+completo e independente dos outros:
 
-| Arquivo | Papel |
-| --- | --- |
-| `docker-compose.yml` | Base: o que é igual em qualquer ambiente. Não sobe sozinho. |
-| `docker-compose.override.yml` | Desenvolvimento. Carregado **automaticamente** por `docker compose`, por convenção do nome. |
-| `docker-compose.prod.yml` | Produção. Só entra quando pedido com `-f`. |
-| `.env.prod.example` | Modelo das senhas de produção. O `.env.prod` real nunca é versionado. |
+| Arquivo | Papel | Imagem da API |
+| --- | --- | --- |
+| `docker-compose.yml` | Desenvolvimento. É o arquivo que `docker compose` lê quando nenhum `-f` é informado. | `higor369/biblioteca-api:latest`, do Docker Hub |
+| `docker-compose.prod.yml` | Produção. Só entra quando pedido com `-f`. | `higor369/biblioteca-api:${API_TAG}`, do Docker Hub |
+| `docker-compose.local.yml` | Testes locais do código da máquina, antes do commit. | `biblioteca-api:local`, buildada do `Dockerfile` |
+| `.env.prod.example` | Modelo das senhas e da tag da imagem de produção. O `.env.prod` real nunca é versionado. |
 
 O que cada ambiente recebe:
 
-| | Desenvolvimento | Produção |
-| --- | --- | --- |
-| `ASPNETCORE_ENVIRONMENT` | `Development` | `Production` |
-| Swagger UI (`/`) e Scalar (`/scalar/v1`) | disponíveis | `404` |
-| Log do SQL gerado pelo EF | ligado (`appsettings.Development.json`) | desligado |
-| Acervo de exemplo na criação do banco | gravado (`appsettings.Development.json`) | não |
-| Senha do banco | fixa no override | lida do `.env.prod`; se faltar, o Compose recusa subir |
-| Porta 5432 do PostgreSQL | aberta para a máquina | fechada; só a API alcança o banco |
-| Porta da API | `8080` | `8081` |
-| Reinício automático | não | `restart: unless-stopped` |
-| Projeto (prefixo de containers, rede e volume) | `biblioteca-dev` | `biblioteca-prod` |
+| | Desenvolvimento | Produção | Testes locais |
+| --- | --- | --- | --- |
+| `ASPNETCORE_ENVIRONMENT` | `Development` | `Production` | `Development` |
+| Swagger UI (`/`) e Scalar (`/scalar/v1`) | disponíveis | `404` | disponíveis |
+| Log do SQL gerado pelo EF | ligado (`appsettings.Development.json`) | desligado | ligado |
+| Acervo de exemplo na criação do banco | gravado (`appsettings.Development.json`) | não | gravado |
+| Senha do banco | fixa no `docker-compose.yml` | lida do `.env.prod`; se faltar, o Compose recusa subir | fixa no `docker-compose.local.yml` |
+| Porta do PostgreSQL na máquina | `5432` | fechada; só a API alcança o banco | `5433` |
+| Porta da API | `8080` | `8081` | `8082` |
+| Reinício automático | não | `restart: unless-stopped` | não |
+| Projeto (prefixo de containers, rede e volume) | `biblioteca-dev` | `biblioteca-prod` | `biblioteca-local` |
+
+Dev e produção sempre consultam o Docker Hub ao subir (`pull_policy: always`): o que roda é
+a imagem que passou no CI, não o código da máquina. Para ver uma mudança ainda não
+publicada, use o ambiente de testes locais.
 
 Nomes de projeto diferentes fazem cada ambiente ter o próprio volume de dados. Sem isso, o
 de produção encontraria o banco já inicializado com a senha de desenvolvimento — o
@@ -54,7 +58,7 @@ PostgreSQL só lê `POSTGRES_PASSWORD` na primeira vez que cria o volume.
 #### Desenvolvimento
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 A API sobe em `http://localhost:8080` e aplica as migrations sozinha na inicialização —
@@ -79,21 +83,34 @@ docker compose down -v
 #### Produção (simulada localmente)
 
 ```bash
-cp .env.prod.example .env.prod   # uma vez só; depois troque a senha
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d --build
+cp .env.prod.example .env.prod   # uma vez só; depois troque a senha e, se quiser, a tag
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
-A API sobe em `http://localhost:8081`. O healthcheck responde normalmente; o Swagger UI e o Scalar, não.
-Os mesmos `-f` e `--env-file` valem para qualquer outro comando nesse ambiente, como
+A API sobe em `http://localhost:8081`, com a tag definida em `API_TAG` no `.env.prod`. Para
+voltar a uma versão anterior, troque o número da tag e rode o mesmo comando de novo. O healthcheck responde normalmente; o Swagger UI e o Scalar, não.
+O mesmo `-f` e o `--env-file` valem para qualquer outro comando nesse ambiente, como
 `logs`, `ps` e `down`.
+
+#### Testes locais
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+```
+
+Builda a imagem a partir do código da máquina e sobe em `http://localhost:8082`, com o banco
+na porta `5433`. Serve para testar uma mudança antes do commit, sem esperar o CI publicar a
+imagem. Para derrubar: `docker compose -f docker-compose.local.yml down -v`.
 
 #### Vendo o que cada ambiente recebe
 
-Trocar `up -d --build` por `config` imprime o resultado final da mesclagem, sem subir nada:
+Trocar `up -d` por `config` imprime a configuração final, já com as variáveis
+substituídas, sem subir nada:
 
 ```bash
 docker compose config
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod config
+docker compose -f docker-compose.prod.yml --env-file .env.prod config
+docker compose -f docker-compose.local.yml config
 ```
 
 ### Rodando a API local, com o banco em container

@@ -1,21 +1,20 @@
 # ---------------------------------------------------------------------------
-# Ambiente de DESENVOLVIMENTO.
+# Ambiente de TESTES LOCAIS: sobe o codigo que esta na sua maquina.
 #
-#   docker compose up -d
+#   docker compose -f docker-compose.local.yml up -d --build
 #
-# E o arquivo que o Compose le quando nenhum -f e informado. Usa a imagem
-# publicada no Docker Hub pelo CI, nao o codigo da sua maquina. Para testar o
-# codigo local, use o docker-compose.local.yml. Producao fica no
-# docker-compose.prod.yml. Os tres arquivos sao completos e independentes.
+# Diferente do docker-compose.yml, que usa a imagem publicada no Docker Hub,
+# este builda a imagem a partir do Dockerfile. Serve para testar uma mudanca
+# antes do commit, sem esperar o CI publicar.
 #
-# Senhas fixas aqui sao aceitaveis: o banco de dev so guarda dado descartavel.
+# Portas e nome de projeto proprios: da para rodar ao mesmo tempo que dev e prod.
 #
-# Para ver a configuracao final, troque "up -d" por "config".
+# Para ver a configuracao final, troque "up -d --build" por "config".
 # ---------------------------------------------------------------------------
 
-# Nome do projeto: prefixa containers, rede e volume (biblioteca-dev-api-1,
-# biblioteca-dev_dados-postgres), isolando dev de prod.
-name: biblioteca-dev
+# Nome do projeto: prefixa containers, rede e volume (biblioteca-local-api-1,
+# biblioteca-local_dados-postgres), isolando este ambiente dos outros.
+name: biblioteca-local
 
 services:
 
@@ -28,8 +27,8 @@ services:
     volumes:
       - dados-postgres:/var/lib/postgresql/data
     ports:
-      # Exposto para inspecionar o banco pela maquina local e para o "dotnet run".
-      - "5432:5432"
+      # 5433 na maquina para nao disputar a 5432 com o banco de dev.
+      - "5433:5432"
     healthcheck:
       # A API so sobe depois que este teste passar: sem isso a aplicacao tentaria
       # aplicar as migrations antes de o banco aceitar conexao.
@@ -42,20 +41,19 @@ services:
       start_period: 10s
 
   api:
-    # latest e a ultima imagem que passou no CI.
-    image: higor369/biblioteca-api:latest
-    # Sem isto o Compose reaproveitaria a copia que ja esta na maquina, e um
-    # latest novo no Docker Hub nunca chegaria aqui.
-    pull_policy: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Nome da imagem gerada pelo build. Sem ele, o Compose inventaria um nome;
+    # com ele, a imagem local nunca se confunde com a do Docker Hub.
+    image: biblioteca-api:local
     environment:
       # Liga o Swagger UI e o Scalar (Program.cs) e faz o ASP.NET carregar o
       # appsettings.Development.json.
       ASPNETCORE_ENVIRONMENT: Development
-      # Variavel de ambiente tem precedencia sobre appsettings.json:
-      # e assim que a mesma imagem serve para qualquer ambiente.
       ConnectionStrings__Biblioteca: "Host=banco;Port=5432;Database=biblioteca;Username=biblioteca;Password=biblioteca"
     ports:
-      - "8080:8080"
+      - "8082:8080"
     depends_on:
       banco:
         condition: service_healthy

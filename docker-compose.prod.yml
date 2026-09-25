@@ -1,8 +1,15 @@
 # ---------------------------------------------------------------------------
 # Ambiente de PRODUCAO (simulado localmente).
 #
-# So entra quando pedido explicitamente com -f:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Usa a imagem publicada no Docker Hub pelo CI, na tag definida em API_TAG no
+# .env.prod. Fixar uma tag (ex.: 3) deixa claro o que esta rodando, e voltar
+# para a anterior e so trocar o numero e subir de novo.
+#
+# Arquivo completo e independente: nao e mesclado com o docker-compose.yml.
+# Se fosse, herdaria as portas de dev, porque o Compose soma as listas de
+# "ports" em vez de substituir, e o banco ficaria exposto na 5432.
 #
 # Nenhuma senha fica neste arquivo: os valores vem do .env.prod, que nao e
 # versionado. A sintaxe ${VAR:?mensagem} faz o Compose se recusar a subir se a
@@ -16,22 +23,51 @@ name: biblioteca-prod
 services:
 
   banco:
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB no .env.prod}
       POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER no .env.prod}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env.prod}
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
     # Sem "ports": o banco nao fica acessivel pela maquina, so pela rede interna
     # do Compose, onde a API o encontra pelo nome do servico ("banco").
+    healthcheck:
+      # A API so sobe depois que este teste passar: sem isso a aplicacao tentaria
+      # aplicar as migrations antes de o banco aceitar conexao.
+      # O $$ impede o Compose de substituir a variavel: quem le e o shell dentro
+      # do container, entao o teste usa o usuario definido no .env.prod.
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   api:
+    # Sem API_TAG no .env.prod, cai em latest.
+    image: higor369/biblioteca-api:${API_TAG:-latest}
+    # Confere no Docker Hub a cada "up": com latest, e o que traz a versao nova.
+    pull_policy: always
     environment:
-      # Desliga o Scalar e o appsettings.Development.json nao e carregado.
-      # Production ja e o padrao do ASP.NET quando a variavel nao existe;
-      # declarar deixa a intencao explicita.
+      # Desliga o Swagger UI e o Scalar, e o appsettings.Development.json nao e
+      # carregado. Production ja e o padrao do ASP.NET quando a variavel nao
+      # existe; declarar deixa a intencao explicita.
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Biblioteca: "Host=banco;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
     ports:
       # Porta diferente da de dev para os dois ambientes poderem rodar lado a lado.
       - "8081:8080"
+    depends_on:
+      banco:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
+
+volumes:
+  dados-postgres:
