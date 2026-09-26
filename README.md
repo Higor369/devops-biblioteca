@@ -44,7 +44,7 @@ O que cada ambiente recebe:
 | Senha do banco | fixa no `docker-compose.yml` | lida do `.env.prod`; se faltar, o Compose recusa subir | fixa no `docker-compose.local.yml` |
 | Porta do PostgreSQL na máquina | `5432` | fechada; só a API alcança o banco | `5433` |
 | Porta da API | `8080` | `8081` | `8082` |
-| Reinício automático | não | `restart: unless-stopped` | não |
+| Reinício automático | `restart: unless-stopped` | `restart: unless-stopped` | não |
 | Projeto (prefixo de containers, rede e volume) | `biblioteca-dev` | `biblioteca-prod` | `biblioteca-local` |
 
 Dev e produção sempre consultam o Docker Hub ao subir (`pull_policy: always`): o que roda é

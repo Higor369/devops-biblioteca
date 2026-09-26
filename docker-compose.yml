@@ -40,6 +40,9 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    # Volta sozinho quando o Docker sobe (reboot da maquina ou do Docker Desktop)
+    # e quando o container cai. So fica parado se voce mesmo o parou.
+    restart: unless-stopped
 
   api:
     # latest e a ultima imagem que passou no CI.
@@ -65,6 +68,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    # No reboot quem sobe os containers e o Docker, nao o Compose, entao o
+    # depends_on acima nao vale: a API pode subir antes de o banco aceitar
+    # conexao. Ai as migrations falham, a API cai e o restart a sobe de novo,
+    # ate o banco estar pronto.
+    restart: unless-stopped
 
 volumes:
   dados-postgres:
