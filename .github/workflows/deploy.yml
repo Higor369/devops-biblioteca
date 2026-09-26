@@ -1,0 +1,125 @@
+# ---------------------------------------------------------------------------
+# Deploy: atualiza a EC2 de desenvolvimento com a imagem que o CI acabou de
+# publicar no Docker Hub.
+#
+# Este arquivo e um "reusable workflow": o ci.yml o chama depois do job que
+# publica a imagem. Tambem pode ser rodado a mao pela aba Actions.
+#
+# O que acontece, em ordem:
+#   1. o GitHub pega uma credencial temporaria da AWS (OIDC, sem senha guardada)
+#   2. abre a porta 22 do Security Group so para o IP deste runner
+#   3. copia o docker-compose.yml para a EC2 (scp) e sobe os containers (ssh)
+#   4. fecha a porta 22, mesmo que algum passo anterior tenha falhado
+#   5. confere se o site responde pelo Nginx
+#
+# O environment DEVELOPMENT exige aprovacao manual: o job fica em "Waiting"
+# ate alguem clicar em "Review deployments" na execucao.
+#
+# Configuracao necessaria no GitHub:
+#   repositorio -> variable AWS_REGION
+#   DEVELOPMENT -> variables AWS_DEPLOY_ROLE_ARN, EC2_SECURITY_GROUP_ID,
+#                  EC2_HOST, EC2_USER, EC2_KNOWN_HOSTS
+#                  secret EC2_SSH_KEY
+# ---------------------------------------------------------------------------
+name: Deploy
+
+on:
+  # Chamado pelo ci.yml a cada push na main, depois que a imagem e publicada.
+  workflow_call:
+  # Botao "Run workflow" na aba Actions: refaz o deploy sem precisar de push.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Deixa o job pedir ao GitHub o token OIDC que a AWS troca pela credencial
+  # temporaria da role. Sem isto o passo de login na AWS falha.
+  id-token: write
+
+# Dois deploys ao mesmo tempo disputariam a porta 22 e o docker compose. Um
+# novo fica na fila ate o anterior terminar, em vez de cancela-lo no meio.
+concurrency:
+  group: deploy-development
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy na EC2
+    runs-on: ubuntu-latest
+    # Libera as variables e o secret da EC2, e aplica a aprovacao manual.
+    # A trust policy da role na AWS so aceita tokens vindos deste environment.
+    environment: DEVELOPMENT
+
+    env:
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_USER: ${{ vars.EC2_USER }}
+      SECURITY_GROUP: ${{ vars.EC2_SECURITY_GROUP_ID }}
+
+    steps:
+      # So o docker-compose.yml e usado: a imagem ja vem pronta do Docker Hub.
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      # Troca o token OIDC do GitHub por uma credencial da role, valida por uma
+      # hora. O role-session-name aparece no CloudTrail: da para saber qual
+      # execucao fez cada alteracao no Security Group.
+      # Action de terceiros: fixada pelo SHA do commit, como no seguranca.yml.
+      - name: Login na AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: deploy-biblioteca-${{ github.run_id }}
+
+      # O runner muda de IP a cada execucao: e preciso descobrir o desta.
+      - name: Descobrir o IP do runner
+        id: runner
+        run: echo "ip=$(curl --fail --silent --show-error https://checkip.amazonaws.com)" >> "$GITHUB_OUTPUT"
+
+      # /32 = exatamente um IP. A descricao identifica a regra no console, caso
+      # ela sobre por algum motivo.
+      - name: Abrir a porta 22 para o runner
+        id: abrir
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$SECURITY_GROUP" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner.outputs.ip }}/32,Description=github-actions-deploy}]"
+
+      # A chave vem por variavel de ambiente, nao direto no comando: assim ela
+      # nunca aparece no texto do script que o GitHub mostra no log.
+      # O known_hosts e o mesmo "yes" que voce respondeu no primeiro acesso: sem
+      # ele, o SSH recusaria conectar numa maquina que nao conhece.
+      - name: Preparar o SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      # Todo deploy leva o compose versionado: o arquivo da EC2 nunca fica
+      # diferente do que esta no repositorio.
+      - name: Copiar o docker-compose.yml
+        run: scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes docker-compose.yml "$EC2_USER@$EC2_HOST:~/biblioteca/"
+
+      # O mesmo comando do deploy manual. O pull_policy: always do compose baixa
+      # o latest recem-publicado. --wait so devolve o terminal quando os
+      # healthchecks passam, e falha se algum container ficar unhealthy.
+      - name: Atualizar os containers
+        run: ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" 'cd ~/biblioteca && docker compose up -d --wait --wait-timeout 180'
+
+      # always(): roda mesmo se um passo anterior falhou ou a execucao foi
+      # cancelada. So fica de fora se a abertura nem chegou a ser tentada.
+      # Se a abertura falhou porque uma regra antiga sobrou, este passo a remove.
+      - name: Fechar a porta 22
+        if: always() && steps.abrir.outcome != 'skipped'
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "$SECURITY_GROUP" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner.outputs.ip }}/32}]"
+
+      # Testa de fora, como um visitante: passa pelo Security Group, pelo Nginx
+      # e chega na API. As tentativas cobrem os segundos em que a API reinicia.
+      - name: Conferir o site
+        run: curl --fail --silent --show-error --retry 10 --retry-delay 5 --retry-all-errors "http://$EC2_HOST/health"

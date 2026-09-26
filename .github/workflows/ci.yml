@@ -1,10 +1,12 @@
 # ---------------------------------------------------------------------------
-# CI: testa a solution e, se tudo passar, publica a imagem no Docker Hub.
+# CI: testa a solution e, se tudo passar, publica a imagem no Docker Hub e
+# faz o deploy na EC2.
 #
 #   testes     -> roda em todo push e pull request para a main
 #   seguranca  -> scans de vulnerabilidade (seguranca.yml): so geram alerta,
 #                 nao bloqueiam a publicacao da imagem
 #   imagem     -> so roda depois dos testes, e so na main
+#   deploy     -> so roda depois da imagem (deploy.yml), e espera aprovacao
 #
 # Os testes de integracao usam Testcontainers para subir um PostgreSQL real.
 # Nao e preciso configurar nada para isso: o runner ubuntu-latest ja vem com
@@ -79,9 +81,9 @@ jobs:
     # codigo chegar na main.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # Os secrets DOCKERHUB_USERNAME e DOCKERHUB_TOKEN estao cadastrados neste
-    # environment: sem esta linha o job nao enxerga nenhum dos dois.
-    environment: DEVELOPMENT
+    # Sem environment: publicar a imagem nao e um deploy. A variable
+    # DOCKERHUB_USERNAME e o secret DOCKERHUB_TOKEN ficam no nivel do
+    # repositorio, e a aprovacao manual do DEVELOPMENT nao trava este job.
 
     steps:
       - name: Baixar o codigo
@@ -91,7 +93,7 @@ jobs:
       - name: Login no Docker Hub
         uses: docker/login-action@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Buildx e o builder moderno do Docker. E ele que permite guardar o cache
@@ -109,8 +111,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGEM }}:${{ github.run_number }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGEM }}:latest
+            ${{ vars.DOCKERHUB_USERNAME }}/${{ env.IMAGEM }}:${{ github.run_number }}
+            ${{ vars.DOCKERHUB_USERNAME }}/${{ env.IMAGEM }}:latest
           # Cada execucao comeca numa maquina limpa. Sem cache, o dotnet restore
           # do Dockerfile baixaria todos os pacotes de novo a cada push.
           cache-from: type=gha
@@ -118,3 +120,16 @@ jobs:
 
       - name: Resultado
         run: echo "Imagem publicada com a tag ${{ github.run_number }}"
+
+  # O deploy fica em outro arquivo, como os scans. Em pull request o job imagem
+  # e pulado, e por causa do "needs" o deploy e pulado junto.
+  deploy:
+    name: Deploy
+    needs: imagem
+    uses: ./.github/workflows/deploy.yml
+    # id-token: write e o que deixa o deploy pedir o token OIDC para a AWS.
+    # Os dados da EC2 nao passam por aqui: o deploy.yml os le direto do
+    # environment DEVELOPMENT.
+    permissions:
+      contents: read
+      id-token: write
