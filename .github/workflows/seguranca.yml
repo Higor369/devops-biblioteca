@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
 # Seguranca: scans de vulnerabilidade do codigo, das dependencias e da imagem.
 #
-# Este arquivo e um "reusable workflow": o ci.yml o chama como um job
-# (uses: ./.github/workflows/seguranca.yml), em paralelo aos testes.
+# Este arquivo e um "reusable workflow": o ci-dev.yml e o ci-prod.yml o chamam
+# como um job (uses: ./.github/workflows/seguranca.yml), em paralelo aos testes.
 #
 #   repositorio -> pacotes NuGet vulneraveis, secrets no codigo e erros de
 #                  configuracao no Dockerfile (Trivy)
@@ -21,7 +21,8 @@
 name: Seguranca
 
 on:
-  # Chamado pelo ci.yml a cada push e pull request.
+  # Chamado pelo ci-dev.yml e pelo ci-prod.yml a cada push e pull request das
+  # branches deles.
   workflow_call:
   # Toda segunda as 06:00 UTC. Vulnerabilidades novas sao descobertas o tempo
   # todo: uma imagem limpa hoje pode ter CVE na semana que vem sem que nenhuma
@@ -93,8 +94,8 @@ jobs:
       - name: Preparar o Buildx
         uses: docker/setup-buildx-action@v4
 
-      # Builda a mesma imagem que o ci.yml publica, mas so dentro do runner
-      # (load: true, push: false). O cache de camadas e o mesmo do ci.yml.
+      # Builda a mesma imagem que os pipelines publicam, mas so dentro do runner
+      # (load: true, push: false). O cache de camadas e o mesmo deles.
       - name: Build da imagem
         uses: docker/build-push-action@v7
         with:

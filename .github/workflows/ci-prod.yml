@@ -7,7 +7,7 @@
 # O build da imagem e o deploy entram depois, nos lugares marcados no fim do
 # arquivo.
 #
-# Por que um arquivo separado do ci.yml: os dois pipelines vao divergir. O da
+# Por que um arquivo separado do ci-dev.yml: os dois pipelines vao divergir. O da
 # main testa, publica a imagem no Docker Hub e faz o deploy na EC2 de
 # desenvolvimento; o da prod vai publicar no ECR da AWS e entregar em outra
 # EC2, com outra role. Um unico arquivo cheio de "if" para descobrir em qual
@@ -23,7 +23,7 @@
 name: CI Prod
 
 on:
-  # Nenhum gatilho aqui pega a main, e nenhum gatilho do ci.yml pega a prod:
+  # Nenhum gatilho aqui pega a main, e nenhum gatilho do ci-dev.yml pega a prod:
   # um push nunca dispara os dois pipelines ao mesmo tempo.
   push:
     branches: [prod]
@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Os mesmos testes do ci.yml. Rodam de novo aqui de proposito: o codigo chega
+  # Os mesmos testes do ci-dev.yml. Rodam de novo aqui de proposito: o codigo chega
   # na prod por merge, e um merge pode quebrar o que passava nas duas branches
   # separadas. Alem disso, nada impede um push direto na prod - sem este job,
   # ele iria para producao sem nunca ter sido testado.
@@ -74,7 +74,7 @@ jobs:
       - name: Resultado
         run: echo "Todos os testes passaram!"
 
-  # Os mesmos scans do ci.yml, do mesmo arquivo: Trivy no repositorio, Trivy na
+  # Os mesmos scans do ci-dev.yml, do mesmo arquivo: Trivy no repositorio, Trivy na
   # imagem e CodeQL no codigo C#.
   #
   # Sem "needs": roda em paralelo aos testes. O que os scans encontram vira
@@ -97,9 +97,9 @@ jobs:
   #   imagem -> build do Dockerfile e push no ECR da AWS (nao no Docker Hub, que
   #             fica so com as imagens de desenvolvimento). Credencial por OIDC,
   #             com uma role propria amarrada a branch prod. Vai depender deste
-  #             job de testes, como o imagem do ci.yml depende do de la.
+  #             job de testes, como o imagem do ci-dev.yml depende do de la.
   #
-  #   deploy -> o mesmo roteiro do deploy.yml (abre a porta 22 para o IP do
+  #   deploy -> o mesmo roteiro do deploy-dev.yml (abre a porta 22 para o IP do
   #             runner, sobe os containers, fecha a porta), mas no environment
   #             PRODUCTION: outras variables de EC2, outro secret de chave SSH e
   #             outra role na AWS. A trust policy compara o "sub" do token, que

@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
-# Deploy: atualiza a EC2 de desenvolvimento com a imagem que o CI acabou de
+# Deploy Dev: atualiza a EC2 de desenvolvimento com a imagem que o CI acabou de
 # publicar no Docker Hub.
 #
-# Este arquivo e um "reusable workflow": o ci.yml o chama depois do job que
+# Este arquivo e um "reusable workflow": o ci-dev.yml o chama depois do job que
 # publica a imagem. Tambem pode ser rodado a mao pela aba Actions.
 #
 # O que acontece, em ordem:
@@ -21,10 +21,10 @@
 #                  EC2_HOST, EC2_USER, EC2_KNOWN_HOSTS
 #                  secret EC2_SSH_KEY
 # ---------------------------------------------------------------------------
-name: Deploy
+name: Deploy Dev
 
 on:
-  # Chamado pelo ci.yml a cada push na main, depois que a imagem e publicada.
+  # Chamado pelo ci-dev.yml a cada push na main, depois que a imagem e publicada.
   workflow_call:
   # Botao "Run workflow" na aba Actions: refaz o deploy sem precisar de push.
   workflow_dispatch:
