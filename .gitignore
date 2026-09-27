@@ -30,6 +30,9 @@ appsettings.Local.json
 # Arquivos pessoais que nunca vão para o repositório (chaves, anotações).
 _nao_comitar/
 
+# Scripts de infraestrutura que ficam so na maquina (user data da EC2).
+infra/
+
 # NuGet
 *.nupkg
 packages/
