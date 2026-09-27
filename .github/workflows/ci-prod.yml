@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# CI Prod: pipeline da branch prod, a que atende a EC2 de producao.
+#
+# Por enquanto so roda os scans de seguranca. O build da imagem e o deploy
+# entram depois, nos lugares marcados no fim do arquivo.
+#
+# Por que um arquivo separado do ci.yml: os dois pipelines vao divergir. O da
+# main testa, publica a imagem e faz o deploy na EC2 de desenvolvimento; o da
+# prod vai promover uma imagem ja testada para outra EC2, com outro environment
+# e outra role na AWS. Um unico arquivo cheio de "if" para descobrir em qual
+# branch esta seria pior de ler do que dois arquivos curtos.
+#
+# Este arquivo tambem fica na main, mesmo sem rodar la: o botao "Run workflow"
+# da aba Actions so aparece para workflows que existem na branch default.
+#
+# Acompanhe as execucoes na aba "Actions" do repositorio no GitHub.
+# ---------------------------------------------------------------------------
+name: CI Prod
+
+on:
+  # Nenhum gatilho aqui pega a main, e nenhum gatilho do ci.yml pega a prod:
+  # um push nunca dispara os dois pipelines ao mesmo tempo.
+  push:
+    branches: [prod]
+  # O pull request para a prod e onde os scans mais valem: os alertas do CodeQL
+  # aparecem no proprio diff, antes de o codigo virar producao.
+  pull_request:
+    branches: [prod]
+  # Adiciona o botao "Run workflow" na aba Actions, para rodar manualmente.
+  workflow_dispatch:
+
+jobs:
+  # Os mesmos scans do ci.yml, do mesmo arquivo: Trivy no repositorio, Trivy na
+  # imagem e CodeQL no codigo C#.
+  #
+  # O caminho relativo e resolvido no commit de quem chama: rodando na prod, e
+  # a copia de seguranca.yml daquela branch que roda. Endurecer as regras so em
+  # producao, mais para a frente, nao mexe no pipeline da main.
+  #
+  # Como na main, nenhum scan reprova o pipeline. O que for encontrado vira
+  # alerta na aba Security > Code scanning e aviso amarelo no resumo da
+  # execucao. Quando a EC2 de producao estiver de pe e valer a pena travar o
+  # deploy, o bloqueio entra como um input do seguranca.yml.
+  seguranca:
+    name: Seguranca
+    uses: ./.github/workflows/seguranca.yml
+    # Um workflow chamado so pode ter as permissoes que quem chama concede.
+    # security-events: write e o que deixa os scans publicarem os alertas.
+    permissions:
+      contents: read
+      security-events: write
+
+  # Proximos passos, quando a EC2 de producao existir:
+  #
+  #   imagem -> sem build novo. A imagem de producao e a mesma que o ci.yml ja
+  #             publicou e testou; aqui ela so ganha uma tag estavel, para o
+  #             compose de producao apontar para algo que nao muda a cada push
+  #             na main.
+  #
+  #   deploy -> o mesmo roteiro do deploy.yml (abre a porta 22 para o IP do
+  #             runner, sobe os containers, fecha a porta), mas no environment
+  #             PRODUCTION: outras variables de EC2, outro secret de chave SSH e
+  #             outra role na AWS. A trust policy compara o "sub" do token, que
+  #             leva o nome do environment - a role de producao nao aceita token
+  #             vindo do DEVELOPMENT.
