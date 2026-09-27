@@ -1,0 +1,84 @@
+# ---------------------------------------------------------------------------
+# Ambiente de PRODUCAO de verdade: o que roda na EC2 da AWS.
+#
+#   docker compose -f docker-compose.prod-aws.yml --env-file .env.prod up -d
+#
+# Diferenca para o docker-compose.prod.yml, que simula producao no seu
+# notebook: aqui a imagem vem do ECR privado, e a tag e obrigatoria - em
+# producao voce precisa saber exatamente qual versao esta no ar.
+#
+# Na pratica quem roda este arquivo e o deploy-prod.yml: ele copia o arquivo
+# para a EC2, grava a tag da imagem recem-publicada no .env.prod e sobe os
+# containers. Rodar o comando acima na mao repete o mesmo estado.
+#
+# Nem senha nem o endereco da conta da AWS ficam aqui: tudo vem do .env.prod,
+# que nao e versionado. A sintaxe ${VAR:?mensagem} faz o Compose se recusar a
+# subir se a variavel faltar - melhor falhar agora do que subir errado.
+# ---------------------------------------------------------------------------
+
+# Nome do projeto: prefixa containers, rede e volume (biblioteca-prod-api-1,
+# biblioteca-prod_dados-postgres).
+name: biblioteca-prod
+
+services:
+
+  banco:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB no .env.prod}
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER no .env.prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env.prod}
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    # Sem "ports": o banco so existe na rede interna do Compose, onde a API o
+    # encontra pelo nome do servico. Nem o Nginx da maquina o alcanca.
+    healthcheck:
+      # A API so sobe depois que este teste passar: sem isso a aplicacao
+      # tentaria aplicar as migrations antes de o banco aceitar conexao.
+      # O $$ impede o Compose de substituir a variavel: quem le e o shell
+      # dentro do container.
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    # Sem valor padrao de proposito. Um "latest" silencioso em producao e
+    # exatamente o que nao se quer: ninguem sabe o que esta rodando e nao ha
+    # para onde voltar. Quem escreve o API_TAG no .env.prod e o deploy, com o
+    # numero da execucao que publicou a imagem.
+    image: ${ECR_REGISTRY:?defina ECR_REGISTRY no .env.prod}/biblioteca-api:${API_TAG:?defina API_TAG no .env.prod}
+    # A tag numerica nunca e reescrita, entao aqui o "always" quase nunca baixa
+    # nada. Fica pelo caso do rollback manual para "latest", em que a mesma tag
+    # passa a apontar para outra imagem.
+    pull_policy: always
+    environment:
+      # Desliga o Swagger UI e o Scalar, e o appsettings.Development.json nao e
+      # carregado.
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Biblioteca: "Host=banco;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    ports:
+      # O 127.0.0.1 na frente e proposital: a porta fica acessivel so de dentro
+      # da maquina, onde o Nginx a alcanca. Sem ele, o Docker publicaria em
+      # 0.0.0.0 e a API ficaria exposta direto na internet caso alguem abrisse
+      # a 8081 no Security Group - um engano de um clique.
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      banco:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # No reboot quem sobe os containers e o Docker, nao o Compose, entao o
+    # depends_on acima nao vale: a API pode subir antes de o banco aceitar
+    # conexao. Ai as migrations falham, a API cai e o restart a sobe de novo,
+    # ate o banco estar pronto.
+    restart: unless-stopped
+
+volumes:
+  dados-postgres:

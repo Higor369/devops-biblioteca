@@ -1,6 +1,10 @@
 # ---------------------------------------------------------------------------
 # Ambiente de PRODUCAO (simulado localmente).
 #
+# Este NAO e o arquivo que roda na AWS: aquele e o docker-compose.prod-aws.yml,
+# que usa a imagem do ECR. Este aqui existe para voce experimentar producao no
+# seu notebook, com a imagem publica do Docker Hub.
+#
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 #
 # Usa a imagem publicada no Docker Hub pelo CI, na tag definida em API_TAG no

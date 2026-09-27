@@ -1,0 +1,182 @@
+# ---------------------------------------------------------------------------
+# Deploy Prod: atualiza a EC2 de producao com uma imagem ja publicada no ECR.
+#
+# Irmao do deploy-dev.yml, com tres diferencas:
+#   - roda no environment PRODUCTION, com outra role, outra EC2 e outra chave
+#   - entrega uma tag especifica, recebida como parametro, e nao "latest"
+#   - grava essa tag no .env.prod da maquina, que passa a ser o registro do
+#     que esta no ar
+#
+# O que acontece, em ordem:
+#   1. o GitHub pega uma credencial temporaria da AWS (OIDC, sem senha guardada)
+#   2. abre a porta 22 do Security Group so para o IP deste runner
+#   3. copia o compose para a EC2 (scp) e grava a tag no .env.prod
+#   4. sobe os containers e espera os healthchecks passarem
+#   5. fecha a porta 22, mesmo que algum passo anterior tenha falhado
+#   6. confere se o site responde pelo Nginx
+#
+# O environment PRODUCTION exige aprovacao manual: o job fica em "Waiting" ate
+# alguem clicar em "Review deployments" na execucao.
+#
+# Configuracao necessaria no GitHub:
+#   repositorio -> variable AWS_REGION
+#   PRODUCTION  -> variables AWS_DEPLOY_ROLE_ARN, EC2_SECURITY_GROUP_ID,
+#                  EC2_HOST, EC2_USER, EC2_KNOWN_HOSTS
+#                  secret EC2_SSH_KEY
+#
+# E, dentro da EC2, um ~/biblioteca/.env.prod com as senhas do Postgres e o
+# ECR_REGISTRY. Ele nao vem do repositorio de proposito: senha nao passa por
+# aqui.
+# ---------------------------------------------------------------------------
+name: Deploy Prod
+
+on:
+  # Chamado pelo ci-prod.yml depois que a imagem e publicada. A tag vem de la.
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag da imagem no ECR
+        required: true
+        type: string
+  # Botao "Run workflow" na aba Actions: refaz o deploy, ou volta para uma
+  # versao anterior, sem precisar de push. E aqui que o rollback acontece -
+  # basta informar o numero de uma execucao antiga.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag da imagem no ECR (o numero da execucao que a publicou, ou latest)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  # Deixa o job pedir ao GitHub o token OIDC que a AWS troca pela credencial
+  # temporaria da role. Sem isto o passo de login na AWS falha.
+  id-token: write
+
+# Dois deploys ao mesmo tempo disputariam a porta 22 e o docker compose. Um
+# novo fica na fila ate o anterior terminar, em vez de cancela-lo no meio.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy na EC2
+    runs-on: ubuntu-latest
+    # Libera as variables e o secret da EC2 de producao, e aplica a aprovacao
+    # manual. A trust policy da role na AWS so aceita tokens vindos deste
+    # environment: o "sub" do token termina em ":environment:PRODUCTION", e a
+    # role de producao nao aceita token vindo do DEVELOPMENT.
+    environment: PRODUCTION
+
+    env:
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_USER: ${{ vars.EC2_USER }}
+      SECURITY_GROUP: ${{ vars.EC2_SECURITY_GROUP_ID }}
+      TAG: ${{ inputs.tag }}
+
+    steps:
+      # A tag entra num comando que roda dentro da EC2, e vem de um campo que
+      # uma pessoa preenche. Por isso e conferida antes: so letras, numeros,
+      # ponto, hifen e sublinhado - o mesmo que o Docker aceita numa tag. Sem
+      # isto, um valor como "1; rm -rf ~" viraria dois comandos la dentro.
+      - name: Conferir a tag
+        run: |
+          case "$TAG" in
+            '' | *[!a-zA-Z0-9._-]* )
+              echo "Tag invalida: '$TAG'"
+              exit 1
+              ;;
+          esac
+          echo "Vai entregar a tag $TAG"
+
+      # So o compose e usado: a imagem ja esta pronta no ECR.
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      # Troca o token OIDC do GitHub por uma credencial da role, valida por uma
+      # hora. O role-session-name aparece no CloudTrail: da para saber qual
+      # execucao fez cada alteracao no Security Group.
+      # Action de terceiros: fixada pelo SHA do commit, como no seguranca.yml.
+      - name: Login na AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: deploy-biblioteca-prod-${{ github.run_id }}
+
+      # O runner muda de IP a cada execucao: e preciso descobrir o desta.
+      - name: Descobrir o IP do runner
+        id: runner
+        run: echo "ip=$(curl --fail --silent --show-error https://checkip.amazonaws.com)" >> "$GITHUB_OUTPUT"
+
+      # /32 = exatamente um IP. A descricao identifica a regra no console, caso
+      # ela sobre por algum motivo.
+      - name: Abrir a porta 22 para o runner
+        id: abrir
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$SECURITY_GROUP" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner.outputs.ip }}/32,Description=github-actions-deploy-prod}]"
+
+      # A chave vem por variavel de ambiente, nao direto no comando: assim ela
+      # nunca aparece no texto do script que o GitHub mostra no log.
+      # O known_hosts e a impressao digital da EC2, guardada antes: sem ele o
+      # runner aceitaria qualquer maquina que atendesse naquele IP.
+      - name: Preparar o SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      # Todo deploy leva o compose versionado: o arquivo da EC2 nunca fica
+      # diferente do que esta no repositorio.
+      - name: Copiar o compose
+        run: scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes docker-compose.prod-aws.yml "$EC2_USER@$EC2_HOST:~/biblioteca/"
+
+      # O .env.prod vive na maquina, porque tem as senhas, e o deploy reescreve
+      # so uma linha dele: a da tag. Depois disso o arquivo conta qual versao
+      # esta no ar, e um "docker compose up" manual repete o mesmo estado.
+      - name: Gravar a tag entregue no .env.prod
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
+            "set -e; cd ~/biblioteca; test -f .env.prod || { echo 'Falta o ~/biblioteca/.env.prod na EC2'; exit 1; }; sed -i 's|^API_TAG=.*|API_TAG=$TAG|' .env.prod; grep '^API_TAG=' .env.prod"
+
+      # --wait so devolve o terminal quando os healthchecks passam, e falha se
+      # algum container ficar unhealthy: um deploy quebrado reprova o job, em
+      # vez de passar despercebido.
+      - name: Atualizar os containers
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
+            "cd ~/biblioteca && docker compose -f docker-compose.prod-aws.yml --env-file .env.prod up -d --wait --wait-timeout 180"
+
+      # Cada deploy deixa a imagem anterior parada no disco, e sao ~250 MB cada
+      # num disco de 16 GB. Isto remove as que nao estao em uso ha uma semana,
+      # preservando a anterior para um rollback rapido.
+      - name: Limpar imagens antigas
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
+            'docker image prune --force --filter "until=168h"'
+
+      # always(): roda mesmo se um passo anterior falhou ou a execucao foi
+      # cancelada. So fica de fora se a abertura nem chegou a ser tentada.
+      # Se a abertura falhou porque uma regra antiga sobrou, este passo a remove.
+      - name: Fechar a porta 22
+        if: always() && steps.abrir.outcome != 'skipped'
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "$SECURITY_GROUP" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner.outputs.ip }}/32}]"
+
+      # Testa de fora, como um visitante: passa pelo Security Group, pelo Nginx
+      # e chega na API. As tentativas cobrem os segundos em que a API reinicia.
+      - name: Conferir o site
+        run: curl --fail --silent --show-error --retry 10 --retry-delay 5 --retry-all-errors "http://$EC2_HOST/health"
+
+      - name: Resultado
+        run: echo "Producao esta rodando a tag $TAG"

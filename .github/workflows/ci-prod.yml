@@ -34,6 +34,12 @@ on:
   # Adiciona o botao "Run workflow" na aba Actions, para rodar manualmente.
   workflow_dispatch:
 
+# Nome do repositorio no ECR. O endereco do registry fica na variable
+# ECR_REGISTRY, no nivel do repositorio: assim o mesmo workflow serve outra
+# conta da AWS sem edicao.
+env:
+  IMAGEM: biblioteca-api
+
 jobs:
   # Os mesmos testes do ci-dev.yml. Rodam de novo aqui de proposito: o codigo chega
   # na prod por merge, e um merge pode quebrar o que passava nas duas branches
@@ -92,16 +98,90 @@ jobs:
       contents: read
       security-events: write
 
-  # Proximos passos, quando a EC2 de producao existir:
+  imagem:
+    name: Build e push da imagem
+    # Sem "needs" os dois jobs rodariam em paralelo: a imagem seria publicada
+    # mesmo com teste quebrado. A seguranca fica de fora de proposito, porque
+    # os scans so geram alerta.
+    needs: testes
+    # Em pull request so os testes rodam: nenhuma imagem e publicada antes de o
+    # codigo chegar na prod.
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    # Sem environment, como no ci-dev.yml: publicar a imagem nao e um deploy.
+    # Se este job usasse o PRODUCTION, ficaria parado esperando aprovacao antes
+    # mesmo de compilar - e a aprovacao existe para o deploy, nao para o build.
+    permissions:
+      contents: read
+      # Deixa o job pedir ao GitHub o token OIDC que a AWS troca pela
+      # credencial temporaria da role. Sem isto o login na AWS falha.
+      id-token: write
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      # Diferenca para o ci-dev.yml: la o login e no Docker Hub, com usuario e
+      # token guardados no repositorio. Aqui nao ha senha nenhuma - o GitHub
+      # prova quem e, e a AWS devolve uma credencial que vale uma hora.
+      # A trust policy desta role so aceita token vindo da branch prod.
+      # Action de terceiros: fixada pelo SHA do commit, como no seguranca.yml.
+      - name: Login na AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: push-biblioteca-${{ github.run_id }}
+
+      # O Docker nao fala IAM: ele espera usuario e senha. Este comando troca a
+      # credencial da role por um token do ECR e o entrega ao docker login.
+      # O --password-stdin mantem o token fora da linha de comando, que apareceria
+      # na lista de processos do runner.
+      - name: Login no ECR
+        run: |
+          aws ecr get-login-password --region "${{ vars.AWS_REGION }}" \
+            | docker login --username AWS --password-stdin "${{ vars.ECR_REGISTRY }}"
+
+      # Buildx e o builder moderno do Docker. E ele que permite guardar o cache
+      # das camadas entre execucoes (cache-from / cache-to abaixo).
+      - name: Preparar o Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Duas tags para a mesma imagem. A do run_number e a que o deploy usa: ela
+      # nomeia uma imagem especifica, que nunca muda, entao da para saber o que
+      # esta rodando e voltar para a anterior trocando um numero. A latest existe
+      # so por conveniencia, para um "docker pull" manual na maquina.
+      - name: Build e push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ vars.ECR_REGISTRY }}/${{ env.IMAGEM }}:${{ github.run_number }}
+            ${{ vars.ECR_REGISTRY }}/${{ env.IMAGEM }}:latest
+          # Cada execucao comeca numa maquina limpa. Sem cache, o dotnet restore
+          # do Dockerfile baixaria todos os pacotes de novo a cada push.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Resultado
+        run: echo "Imagem publicada no ECR com a tag ${{ github.run_number }}"
+
+  # O deploy fica em outro arquivo, como os scans. Em pull request o job imagem
+  # e pulado, e por causa do "needs" o deploy e pulado junto.
   #
-  #   imagem -> build do Dockerfile e push no ECR da AWS (nao no Docker Hub, que
-  #             fica so com as imagens de desenvolvimento). Credencial por OIDC,
-  #             com uma role propria amarrada a branch prod. Vai depender deste
-  #             job de testes, como o imagem do ci-dev.yml depende do de la.
-  #
-  #   deploy -> o mesmo roteiro do deploy-dev.yml (abre a porta 22 para o IP do
-  #             runner, sobe os containers, fecha a porta), mas no environment
-  #             PRODUCTION: outras variables de EC2, outro secret de chave SSH e
-  #             outra role na AWS. A trust policy compara o "sub" do token, que
-  #             leva o nome do environment - a role de producao nao aceita token
-  #             vindo do DEVELOPMENT.
+  # A tag entregue e o numero desta execucao: a mesma que o job imagem acabou de
+  # publicar. Nao e "latest" de proposito - o que vai para producao e uma imagem
+  # especifica, que continua identificavel depois.
+  deploy:
+    name: Deploy
+    needs: imagem
+    uses: ./.github/workflows/deploy-prod.yml
+    with:
+      tag: ${{ github.run_number }}
+    # id-token: write e o que deixa o deploy pedir o token OIDC para a AWS.
+    # Os dados da EC2 nao passam por aqui: o deploy-prod.yml os le direto do
+    # environment PRODUCTION.
+    permissions:
+      contents: read
+      id-token: write
