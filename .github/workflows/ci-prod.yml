@@ -179,6 +179,12 @@ jobs:
     uses: ./.github/workflows/deploy-prod.yml
     with:
       tag: ${{ github.run_number }}
+    # Um workflow chamado nao enxerga os secrets de quem chama: o contexto
+    # "secrets" dele comeca vazio, e o ${{ secrets.EC2_SSH_KEY }} vira string
+    # vazia sem erro nenhum. O "inherit" repassa os secrets desta execucao.
+    # As variables nao precisam disto - "vars" o job resolve pelo environment
+    # que ele mesmo declara, e foi por isso que o EC2_HOST chegou e a chave nao.
+    secrets: inherit
     # id-token: write e o que deixa o deploy pedir o token OIDC para a AWS.
     # Os dados da EC2 nao passam por aqui: o deploy-prod.yml os le direto do
     # environment PRODUCTION.
