@@ -1,12 +1,12 @@
 # ---------------------------------------------------------------------------
-# CI: testa a solution e, se tudo passar, publica a imagem no Docker Hub e
+# CI Dev: testa a solution e, se tudo passar, publica a imagem no Docker Hub e
 # faz o deploy na EC2.
 #
 #   testes     -> roda em todo push e pull request para a main
 #   seguranca  -> scans de vulnerabilidade (seguranca.yml): so geram alerta,
 #                 nao bloqueiam a publicacao da imagem
 #   imagem     -> so roda depois dos testes, e so na main
-#   deploy     -> so roda depois da imagem (deploy.yml), e espera aprovacao
+#   deploy     -> so roda depois da imagem (deploy-dev.yml), e espera aprovacao
 #
 # Os testes de integracao usam Testcontainers para subir um PostgreSQL real.
 # Nao e preciso configurar nada para isso: o runner ubuntu-latest ja vem com
@@ -14,7 +14,7 @@
 #
 # Acompanhe as execucoes na aba "Actions" do repositorio no GitHub.
 # ---------------------------------------------------------------------------
-name: CI
+name: CI Dev
 
 on:
   push:
@@ -126,9 +126,9 @@ jobs:
   deploy:
     name: Deploy
     needs: imagem
-    uses: ./.github/workflows/deploy.yml
+    uses: ./.github/workflows/deploy-dev.yml
     # id-token: write e o que deixa o deploy pedir o token OIDC para a AWS.
-    # Os dados da EC2 nao passam por aqui: o deploy.yml os le direto do
+    # Os dados da EC2 nao passam por aqui: o deploy-dev.yml os le direto do
     # environment DEVELOPMENT.
     permissions:
       contents: read
