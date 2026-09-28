@@ -59,6 +59,13 @@ services:
       # carregado.
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Biblioteca: "Host=banco;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Ambiente de estudo: o acervo de exemplo entra para a API ter o que
+      # listar. O appsettings.json deixa isto em false, e o
+      # appsettings.Development.json nao e carregado com ASPNETCORE_ENVIRONMENT
+      # em Production - por isso a flag vem daqui. O seed so grava num banco sem
+      # autor nem genero, entao nao duplica a cada deploy nem se mistura com
+      # dado real. Num sistema com usuarios de verdade, isto fica de fora.
+      Banco__PopularComDadosDeExemplo: "true"
     ports:
       # O 127.0.0.1 na frente e proposital: a porta fica acessivel so de dentro
       # da maquina, onde o Nginx a alcanca. Sem ele, o Docker publicaria em

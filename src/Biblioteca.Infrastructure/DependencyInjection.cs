@@ -12,7 +12,9 @@ public static class DependencyInjection
 {
     /// <param name="popularComDadosDeExemplo">
     /// Grava o acervo de <see cref="DadosDeExemplo"/> quando as migrations criam um banco
-    /// vazio. Serve para desenvolvimento; em produção fica desligado.
+    /// vazio. Ligado em desenvolvimento e na produção de estudo deste projeto, onde a
+    /// API precisa de algo a listar. Num sistema com dados reais fica desligado: dado
+    /// de exemplo é indistinguível de dado de verdade.
     /// </param>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
