@@ -139,21 +139,6 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$EC2_KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
 
-      # TEMPORARIO: descobrir por que o OpenSSH recusa a chave com "error in
-      # libcrypto". So conta bytes e linhas e mostra os marcadores de inicio e
-      # fim, que nao sao segredo. Remover assim que o deploy passar.
-      - name: Diagnostico da chave
-        run: |
-          echo "bytes:  $(wc -c < ~/.ssh/deploy_key)   (esperado 419)"
-          echo "linhas: $(wc -l < ~/.ssh/deploy_key)   (esperado 7)"
-          echo "primeira linha: $(head -1 ~/.ssh/deploy_key)"
-          echo "ultima linha:   $(tail -1 ~/.ssh/deploy_key)"
-          if ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null 2>&1; then
-            echo "resultado: chave valida"
-          else
-            echo "resultado: chave invalida"
-          fi
-
       # Todo deploy leva o compose versionado: o arquivo da EC2 nunca fica
       # diferente do que esta no repositorio.
       - name: Copiar o compose
