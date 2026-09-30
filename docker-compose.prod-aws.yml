@@ -11,38 +11,21 @@
 # para a EC2, grava a tag da imagem recem-publicada no .env.prod e sobe os
 # containers. Rodar o comando acima na mao repete o mesmo estado.
 #
-# Nem senha nem o endereco da conta da AWS ficam aqui: tudo vem do .env.prod,
+# Nem o endereco do banco nem o da conta da AWS ficam aqui: tudo vem do .env.prod,
 # que nao e versionado. A sintaxe ${VAR:?mensagem} faz o Compose se recusar a
 # subir se a variavel faltar - melhor falhar agora do que subir errado.
 # ---------------------------------------------------------------------------
 
-# Nome do projeto: prefixa containers, rede e volume (biblioteca-prod-api-1,
-# biblioteca-prod_dados-postgres).
+# O banco nao roda aqui: e um Aurora PostgreSQL Serverless v2 gerenciado pela
+# AWS, criado pela express configuration. Esse tipo de cluster fica fora da VPC,
+# atras do "internet access gateway" do Aurora, e so aceita login por token IAM -
+# nao existe senha. A API gera o token com a role da EC2 (biblioteca-prod-ec2,
+# que tem rds-db:connect so neste cluster e so para o usuario postgres).
+
+# Nome do projeto: prefixa containers e rede (biblioteca-prod-api-1).
 name: biblioteca-prod
 
 services:
-
-  banco:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB no .env.prod}
-      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER no .env.prod}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env.prod}
-    volumes:
-      - dados-postgres:/var/lib/postgresql/data
-    # Sem "ports": o banco so existe na rede interna do Compose, onde a API o
-    # encontra pelo nome do servico. Nem o Nginx da maquina o alcanca.
-    healthcheck:
-      # A API so sobe depois que este teste passar: sem isso a aplicacao
-      # tentaria aplicar as migrations antes de o banco aceitar conexao.
-      # O $$ impede o Compose de substituir a variavel: quem le e o shell
-      # dentro do container.
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    restart: unless-stopped
 
   api:
     # Sem valor padrao de proposito. Um "latest" silencioso em producao e
@@ -58,7 +41,18 @@ services:
       # Desliga o Swagger UI e o Scalar, e o appsettings.Development.json nao e
       # carregado.
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Biblioteca: "Host=banco;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Sem Password: quem preenche e o token IAM (Banco__AutenticacaoIam).
+      # VerifyFull confere o certificado e o nome do servidor. O gateway usa
+      # certificado de CA publica, e isso importa porque o token vai no lugar da
+      # senha - ele nao pode ser entregue a um servidor falso.
+      # Timeout=30: o Aurora pausa sem uso e leva uns 15 s para voltar. O padrao
+      # de 15 s do Npgsql falharia justo na primeira conexao depois da pausa.
+      ConnectionStrings__Biblioteca: "Host=${DB_HOST:?defina DB_HOST no .env.prod};Port=5432;Database=${POSTGRES_DB:?defina POSTGRES_DB no .env.prod};Username=${POSTGRES_USER:?defina POSTGRES_USER no .env.prod};SSL Mode=VerifyFull;Timeout=30"
+      Banco__AutenticacaoIam: "true"
+      # O SDK da AWS le a regiao daqui para assinar o token. A credencial vem da
+      # role da EC2, pelo metadata service - por isso o "hop limit" da instancia
+      # precisa ser 2: o container fica um salto de rede atras do host.
+      AWS_REGION: us-east-2
       # Ambiente de estudo: o acervo de exemplo entra para a API ter o que
       # listar. O appsettings.json deixa isto em false, e o
       # appsettings.Development.json nao e carregado com ASPNETCORE_ENVIRONMENT
@@ -72,20 +66,18 @@ services:
       # 0.0.0.0 e a API ficaria exposta direto na internet caso alguem abrisse
       # a 8081 no Security Group - um engano de um clique.
       - "127.0.0.1:8081:8080"
-    depends_on:
-      banco:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:8080/health || exit 1"]
+      # /health/live, e nao /health: esta rota nao consulta o banco. Chamada a
+      # cada 10 s, a /health manteria o Aurora sempre acordado, e ele nunca
+      # pausaria. A conferencia do banco fica para o deploy, que chama a /health
+      # de fora no fim.
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:8080/health/live || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
-    # No reboot quem sobe os containers e o Docker, nao o Compose, entao o
-    # depends_on acima nao vale: a API pode subir antes de o banco aceitar
-    # conexao. Ai as migrations falham, a API cai e o restart a sobe de novo,
-    # ate o banco estar pronto.
+      # A API so comeca a responder depois de aplicar as migrations, e a primeira
+      # conexao pode esperar o Aurora sair da pausa.
+      start_period: 40s
+    # Se o banco estiver fora do ar na subida, as migrations falham e a API cai.
+    # O restart a sobe de novo ate conseguir.
     restart: unless-stopped
-
-volumes:
-  dados-postgres:

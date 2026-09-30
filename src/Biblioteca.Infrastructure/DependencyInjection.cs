@@ -16,10 +16,16 @@ public static class DependencyInjection
     /// API precisa de algo a listar. Num sistema com dados reais fica desligado: dado
     /// de exemplo é indistinguível de dado de verdade.
     /// </param>
+    /// <param name="autenticacaoIam">
+    /// Troca a senha por um token IAM renovado periodicamente, como exige o Aurora da
+    /// produção. A connection string, nesse caso, vem sem senha. Ver
+    /// <see cref="AutenticacaoIamDoRds"/>.
+    /// </param>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         string connectionString,
-        bool popularComDadosDeExemplo = false)
+        bool popularComDadosDeExemplo = false,
+        bool autenticacaoIam = false)
     {
         // TryAdd: a camada de aplicação registra o mesmo relógio. Qualquer uma das duas
         // pode ser composta primeiro sem que a ordem mude o resultado.
@@ -29,7 +35,13 @@ public static class DependencyInjection
         services.AddDbContext<BibliotecaDbContext>((provedor, options) =>
         {
             options
-                .UseNpgsql(connectionString)
+                .UseNpgsql(connectionString, npgsql =>
+                {
+                    if (autenticacaoIam)
+                    {
+                        npgsql.ConfigureDataSource(dataSource => dataSource.UsarTokenIamDoRds());
+                    }
+                })
                 .AddInterceptors(provedor.GetRequiredService<InterceptadorDeAuditoria>());
 
             // Só a versão assíncrona: a solução aplica as migrations sempre com MigrateAsync.

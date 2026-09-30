@@ -11,6 +11,8 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- Gera o token IAM que substitui a senha no Aurora de producao. -->
+    <PackageVersion Include="AWSSDK.RDS" Version="4.0.106" />
   </ItemGroup>
 
   <ItemGroup Label="Api">

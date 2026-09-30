@@ -24,9 +24,10 @@
 #                  EC2_HOST, EC2_USER, EC2_KNOWN_HOSTS
 #                  secret EC2_SSH_KEY
 #
-# E, dentro da EC2, um ~/biblioteca/.env.prod com as senhas do Postgres e o
-# ECR_REGISTRY. Ele nao vem do repositorio de proposito: senha nao passa por
-# aqui.
+# E, dentro da EC2, um ~/biblioteca/.env.prod com o endereco do Aurora (DB_HOST),
+# o database, o usuario e o ECR_REGISTRY. Ele nao vem do repositorio de
+# proposito: o que e da maquina fica na maquina. Senha de banco nao existe: o
+# Aurora aceita so token IAM, gerado pela API com a role da EC2.
 # ---------------------------------------------------------------------------
 name: Deploy Prod
 
@@ -155,10 +156,12 @@ jobs:
       # --wait so devolve o terminal quando os healthchecks passam, e falha se
       # algum container ficar unhealthy: um deploy quebrado reprova o job, em
       # vez de passar despercebido.
+      # --remove-orphans apaga containers de servicos que sairam do compose,
+      # como o antigo "banco", do tempo em que o Postgres rodava na EC2.
       - name: Atualizar os containers
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$EC2_USER@$EC2_HOST" \
-            "cd ~/biblioteca && docker compose -f docker-compose.prod-aws.yml --env-file .env.prod up -d --wait --wait-timeout 180"
+            "cd ~/biblioteca && docker compose -f docker-compose.prod-aws.yml --env-file .env.prod up -d --wait --wait-timeout 180 --remove-orphans"
 
       # Cada deploy deixa a imagem anterior parada no disco, e sao ~250 MB cada
       # num disco de 16 GB. Isto remove as que nao estao em uso ha uma semana,
@@ -179,7 +182,8 @@ jobs:
             --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.runner.outputs.ip }}/32}]"
 
       # Testa de fora, como um visitante: passa pelo Security Group, pelo Nginx
-      # e chega na API. As tentativas cobrem os segundos em que a API reinicia.
+      # e chega na API, que consulta o Aurora. As tentativas cobrem os segundos
+      # em que a API reinicia e os ~15 s em que o Aurora volta da pausa.
       - name: Conferir o site
         run: curl --fail --silent --show-error --retry 10 --retry-delay 5 --retry-all-errors "http://$EC2_HOST/health"
 

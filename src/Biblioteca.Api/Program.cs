@@ -3,6 +3,7 @@ using Biblioteca.Application;
 using Biblioteca.Domain.Services;
 using Biblioteca.Infrastructure;
 using Biblioteca.Infrastructure.Persistencia;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,8 +20,12 @@ var connectionString = builder.Configuration.GetConnectionString("Biblioteca")
 var popularComDadosDeExemplo =
     builder.Configuration.GetValue("Banco:PopularComDadosDeExemplo", defaultValue: false);
 
+// Ligado só na produção da AWS, onde o Aurora aceita apenas token IAM.
+var autenticacaoIam =
+    builder.Configuration.GetValue("Banco:AutenticacaoIam", defaultValue: false);
+
 builder.Services
-    .AddInfrastructure(connectionString, popularComDadosDeExemplo)
+    .AddInfrastructure(connectionString, popularComDadosDeExemplo, autenticacaoIam)
     .AddDomainServices()
     .AddApplication();
 
@@ -62,6 +67,11 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+// Só confirma que a API responde, sem executar nenhum check. É a rota do healthcheck
+// do container: chamada a cada 10 segundos, a /health manteria o Aurora sempre
+// acordado, e ele nunca pausaria.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 
 if (builder.Configuration.GetValue("Banco:AplicarMigrationsNoStartup", defaultValue: true))
 {
